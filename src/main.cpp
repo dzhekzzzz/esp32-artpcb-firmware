@@ -5,158 +5,157 @@
 #include <ArduinoJson.h>
 #include <NTPClient.h>
 #include <WiFiUdp.h>
+#include <WiFiClientSecure.h>
+
+
+
 
 #define GPIO_PIN 2
 #define FW_VERSION "1.0.0"
 
+
+const char* defaultSSID = "ESP32-AP";
+const char* defaultPassword = "12345678";
+
+
+WebServer server(80); 
+WiFiClientSecure espClient;
+espClient.setInsecure(); 
+
+
+String wifiSSID = "";
+String wifiPassword = "";
+String mqttServer = "";
+int mqttPort = 8883;
+String mqttUser = "";  
+String mqttPass = "";
+
 Preferences preferences;
-
-WiFiClient espClient;
-PubSubClient client(espClient);
-WebServer server(80);
-WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, "pool.ntp.org", 3600 * 2); // CET
-
-String wifiSSID, wifiPassword, mqttServer, mqttUser, mqttPass;
-int mqttPort;
-bool uartEnabled = true;
-
-unsigned long lastMsg = 0;
-int messageID = 1001;
-
-void saveConfig() {
-  preferences.begin("config", false);
-  preferences.putString("ssid", wifiSSID);
-  preferences.putString("pass", wifiPassword);
-  preferences.putString("mqttServer", mqttServer);
-  preferences.putInt("mqttPort", mqttPort);
-  preferences.putString("mqttUser", mqttUser);
-  preferences.putString("mqttPass", mqttPass);
-  preferences.end();
-}
-
-void loadConfig() {
-  preferences.begin("config", true);
-  wifiSSID = preferences.getString("ssid", "");
-  wifiPassword = preferences.getString("pass", "");
-  mqttServer = preferences.getString("mqttServer", "");
-  mqttPort = preferences.getInt("mqttPort", 1883);
-  mqttUser = preferences.getString("mqttUser", "");
-  mqttPass = preferences.getString("mqttPass", "");
-  preferences.end();
-}
 
 void handleRoot() {
   String html = R"rawliteral(
-    <html><body><h1>ESP32 Setup</h1>
-    <form action="/save">
-      SSID: <input name="ssid"><br>
-      Password: <input name="pass"><br>
-      MQTT Server: <input name="mqtt"><br>
-      MQTT Port: <input name="port" type="number"><br>
-      MQTT User: <input name="user"><br>
-      MQTT Pass: <input name="mpass"><br>
-      <input type="submit" value="Save">
-    </form></body></html>
+    <!DOCTYPE html>
+    <html>
+    <head><title>ESP32 Config</title></head>
+    <body>
+      <h2>ESP32 Configuration</h2>
+      <form action="/save" method="GET">
+        Wi-Fi SSID: <input type="text" name="wifiSSID"><br><br>
+        Wi-Fi Password: <input type="password" name="wifiPassword"><br><br>
+        MQTT Broker Address: <input type="text" name="mqttServer"><br><br>
+        MQTT Port: <input type="number" name="mqttPort" value="8883"><br><br>
+        MQTT Username: <input type="text" name="mqttUser"><br><br>
+        MQTT Password: <input type="password" name="mqttPass"><br><br>
+        <input type="submit" value="Save">
+      </form>
+    </body>
+    </html>
   )rawliteral";
   server.send(200, "text/html", html);
 }
 
 void handleSave() {
-  wifiSSID = server.arg("ssid");
-  wifiPassword = server.arg("pass");
-  mqttServer = server.arg("mqtt");
-  mqttPort = server.arg("port").toInt();
-  mqttUser = server.arg("user");
-  mqttPass = server.arg("mpass");
-  saveConfig();
-  server.send(200, "text/html", "Saved. Rebooting...");
-  delay(1000);
+  wifiSSID = server.arg("wifiSSID");
+  wifiPassword = server.arg("wifiPassword");
+  mqttServer = server.arg("mqttServer");
+  mqttPort = server.arg("mqttPort").toInt();
+  mqttUser = server.arg("mqttUser");
+  mqttPass = server.arg("mqttPass");
+
+  preferences.begin("config", false);
+  preferences.putString("wifiSSID", wifiSSID);
+  preferences.putString("wifiPassword", wifiPassword);
+  preferences.putString("mqttServer", mqttServer);
+  preferences.putInt("mqttPort", mqttPort);
+  preferences.putString("mqttUser", mqttUser);
+  preferences.putString("mqttPass", mqttPass);
+  preferences.end();
+
+  server.send(200, "text/html", "<h2>Settings saved. Restarting...</h2>");
+
+  delay(2000);
   ESP.restart();
 }
+void connectToWiFi() {
+  Serial.println("Connecting to Wi-Fi...");
+  WiFi.begin(wifiSSID.c_str(), wifiPassword.c_str());
 
-void setupWebServer() {
-  WiFi.softAP("ESP32_Config", "12345678");
-  IPAddress IP = WiFi.softAPIP();
-  server.on("/", handleRoot);
-  server.on("/save", handleSave);
-  server.begin();
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+    delay(1000);
+    Serial.print(".");
+    attempts++;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println();
+    Serial.print("Connected to Wi-Fi, IP: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("Wi-Fi connection failed");
+  }
 }
 
-void reconnectMQTT() {
-  while (!client.connected()) {
-    if (client.connect("ESP32Client", mqttUser.c_str(), mqttPass.c_str())) {
-      client.subscribe("uart/control");
-      client.subscribe("gpio/control");
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  Serial.print("Message arrived on topic: ");
+  Serial.println(topic);
+
+  String message = "";
+  for (unsigned int i = 0; i < length; i++) {
+    message += (char)payload[i];
+  }
+  Serial.println("Message: " + message);
+}
+
+
+void connectToMQTT() {
+  Serial.println("Connecting to MQTT...");
+  mqttClient.setServer(mqttServer.c_str(), mqttPort);
+  mqttClient.setCallback(mqttCallback);
+
+  int attempts = 0;
+  while (!mqttClient.connected() && attempts < 20) {
+    Serial.print(".");
+    if (mqttClient.connect("ESP32Client", mqttUser.c_str(), mqttPass.c_str())) {
+      Serial.println("Connected to MQTT broker.");
     } else {
-      delay(2000);
+      Serial.print("Failed, rc=");
+      Serial.print(mqttClient.state());
+      delay(5000);
     }
+    attempts++;
   }
-}
-
-void callback(char* topic, byte* payload, unsigned int length) {
-  String message;
-  for (int i = 0; i < length; i++) message += (char)payload[i];
-  StaticJsonDocument<200> doc;
-  DeserializationError err = deserializeJson(doc, message);
-  if (err) return;
-  if (String(topic) == "uart/control") {
-    uartEnabled = doc["state"];
-  } else if (String(topic) == "gpio/control") {
-    digitalWrite(GPIO_PIN, doc["state"] ? HIGH : LOW);
-  }
-}
-
-// float readInternalTemperature() {
-//   // return (temprature_sens_read() - 32) / 1.8;
-// }
-
-void publishStatus() {
-  StaticJsonDocument<256> doc;
-  char macStr[18];
-  uint8_t mac[6];
-  WiFi.macAddress(mac);
-  sprintf(macStr, "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-  doc["MessageID"] = messageID++;
-  doc["FwVerEsp"] = FW_VERSION;
-  // doc["InternalTemperature"] = String(readInternalTemperature(), 1) + "C";
-  doc["ip"] = WiFi.localIP().toString();
-  doc["Time"] = timeClient.getFormattedTime();
-  doc["GPIOStatus"] = digitalRead(GPIO_PIN);
-  char jsonBuffer[256];
-  serializeJson(doc, jsonBuffer);
-  String topic = "status/" + String(macStr);
-  client.publish(topic.c_str(), jsonBuffer);
-  if (uartEnabled) Serial.println(jsonBuffer);
 }
 
 void setup() {
   Serial.begin(115200);
-  pinMode(GPIO_PIN, OUTPUT);
-  loadConfig();
+  preferences.begin("config", true);
+  wifiSSID = preferences.getString("wifiSSID", "");
+  wifiPassword = preferences.getString("wifiPassword", "");
+  mqttServer = preferences.getString("mqttServer", "");
+  mqttPort = preferences.getInt("mqttPort", 8883);
+  mqttUser = preferences.getString("mqttUser", "");
+  mqttPass = preferences.getString("mqttPass", "");
+  preferences.end();
+
   if (wifiSSID == "") {
-    setupWebServer();
-    while (true) {
-      server.handleClient();
-      delay(10);
-    }
-  } else {
-    WiFi.begin(wifiSSID.c_str(), wifiPassword.c_str());
-    unsigned long start = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) delay(500);
-    if (WiFi.status() != WL_CONNECTED) ESP.restart();
-    client.setServer(mqttServer.c_str(), mqttPort);
-    client.setCallback(callback);
-    timeClient.begin();
+    Serial.println("First time setup, starting AP...");
+    WiFi.softAP("ESP32-Setup", "12345678");
+    Serial.print("Access Point IP: ");
+    Serial.println(WiFi.softAPIP());
+
+    server.on("/", handleRoot);
+    server.on("/save", handleSave);
+    server.begin();
+    Serial.println("HTTP server started.");
+    return; 
   }
+
+  connectToWiFi();
+  connectToMQTT();
 }
 
 void loop() {
-  if (!client.connected()) reconnectMQTT();
-  client.loop();
-  timeClient.update();
-  if (millis() - lastMsg > 5000) {
-    lastMsg = millis();
-    publishStatus();
-  }
+  server.handleClient();
+  mqttClient.loop(); 
 }
