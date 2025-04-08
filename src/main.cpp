@@ -6,6 +6,9 @@
 #include <ArduinoJson.h>
 #include <NTPClient.h>
 #include <WiFiUdp.h>
+#include <HardwareSerial.h>  // Для роботи з UART
+// #include "root_ca.h"
+
 
 // Визначення пінів та версії прошивки
 #define GPIO_PIN 2
@@ -14,6 +17,8 @@
 // Стандартні налаштування Wi-Fi та MQTT
 const char* defaultSSID = "ESP32-AP";
 const char* defaultPassword = "12345678";
+const int gpioPin = 2;
+bool uartEnabled = false;  // глобально
 
 // Оголошення об'єктів
 WebServer server(80);
@@ -34,7 +39,6 @@ Preferences preferences;
 // Ініціалізація NTP
 WiFiUDP udp;
 NTPClient timeClient(udp, "pool.ntp.org", 3600, 60000); // CET = UTC+1, 3600 секунд
-
 
 static const char *root_ca PROGMEM = R"EOF(
 -----BEGIN CERTIFICATE-----
@@ -70,7 +74,6 @@ emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
 -----END CERTIFICATE-----
 )EOF";
 
-// Функція для обробки запиту на головну сторінку
 void handleRoot() {
   String html = R"rawliteral(
     <!DOCTYPE html>
@@ -125,64 +128,21 @@ void connectToWiFi() {
   int attempts = 0;
   while (WiFi.status() != WL_CONNECTED && attempts < 20) {
     delay(1000);
-    Serial.print(".");
+    // Serial.print("...");
     attempts++;
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nConnected to Wi-Fi, IP: " + WiFi.localIP().toString());
+    Serial.println("Connected to Wi-Fi, IP: " + WiFi.localIP().toString());
   } else {
     Serial.println("\nWi-Fi connection failed");
   }
 }
 
-// Callback-функція для обробки вхідних MQTT-повідомлень
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  Serial.print("Message arrived on topic: ");
-  Serial.println(topic);
-
-  String message;
-  for (unsigned int i = 0; i < length; i++) {
-    message += (char)payload[i];
-  }
-  Serial.println("Message: " + message);
-}
-
-// Підключення до MQTT
-void connectToMQTT() {
-  Serial.println("Connecting to MQTT...");
-
-  secureClient.setCACert(root_ca); // Встановлення кореневого сертифіката
-  mqttClient.setServer(mqttServer.c_str(), mqttPort);
-  mqttClient.setCallback(mqttCallback);
-
-  int attempts = 0;
-  while (!mqttClient.connected() && attempts < 20) {
-    Serial.print("Attempt ");
-    Serial.print(attempts + 1);
-    Serial.print(": ");
-
-    if (mqttClient.connect("ESP32Client", mqttUser.c_str(), mqttPass.c_str())) {
-      Serial.println("Connected to MQTT broker.");
-    } else {
-      Serial.print("Failed, rc=");
-      Serial.println(mqttClient.state());
-      delay(5000);
-    }
-    attempts++;
-  }
-
-  if (!mqttClient.connected()) {
-    Serial.println("Unable to connect to MQTT broker after multiple attempts.");
-  }
-}
-
-// Функція для публікації даних через MQTT
 void publishData() {
   String macAddress = WiFi.macAddress();
   macAddress.replace(":", ""); // Виправлення формату MAC-адреси
 
-  // Отримання часу за допомогою NTP
   timeClient.update();
   String currentTime = timeClient.getFormattedTime();
 
@@ -190,7 +150,7 @@ void publishData() {
   String ip = WiFi.localIP().toString();
 
   // Отримання внутрішньої температури
-  float internalTemperature = 25.0; // Потрібно підключити датчик температури для реального вимірювання
+  float internalTemperature = temperatureRead(); 
 
   // Створення JSON-об'єкта
   DynamicJsonDocument doc(1024);
@@ -207,14 +167,87 @@ void publishData() {
   String topic = "status/" + macAddress;
   mqttClient.publish(topic.c_str(), jsonString.c_str());
 
-  Serial.println("Data published: " + jsonString);
+  // Виведення даних через UART
+  if (uartEnabled) {
+  Serial.println("Data over UART: " + jsonString);
+  }
 }
 
-// Функція setup
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  Serial.print("Message arrived on topic: ");
+  Serial.println(topic);
+
+  String message;
+  for (unsigned int i = 0; i < length; i++) {
+    message += (char)payload[i];
+  }
+  Serial.println("Message: " + message);
+  String topicStrGpio = String(topic);
+  if (topicStrGpio == "gpio/control") {
+    if (message == "1") {
+      digitalWrite(gpioPin, HIGH);
+      Serial.println("GPIO Pin ON");
+    } else if (message == "0") {
+      digitalWrite(gpioPin, LOW);
+      Serial.println("GPIO Pin OFF");
+    }
+  }
+  String topicStrUART = String(topic);
+  if (topicStrUART == "uart/control") {
+    if (message == "1") {
+      uartEnabled = true;
+      Serial.println("UART Output Enabled");
+    } else if (message == "0") {
+      uartEnabled = false;
+      Serial.println("UART Output Disabled");
+    }
+  }
+}
+
+// Підключення до MQTT
+void connectToMQTT() {
+  Serial.println("Connecting to MQTT...");
+
+  secureClient.setCACert(root_ca); // Встановлення кореневого сертифіката
+  mqttClient.setServer(mqttServer.c_str(), mqttPort);
+  mqttClient.setCallback(mqttCallback); // Встановлюємо callback функцію
+
+  int attempts = 0;
+  while (!mqttClient.connected() && attempts < 20) {
+    Serial.print("Attempt ");
+    Serial.print(attempts + 1);
+    Serial.print(": ");
+
+    if (mqttClient.connect("ESP32Client", mqttUser.c_str(), mqttPass.c_str())) {
+      Serial.println("Connected to MQTT broker.");
+
+      // Підписка на тему після успішного підключення
+      mqttClient.subscribe("uart/control"); // Замініть на вашу тему
+      mqttClient.subscribe("gpio/control"); 
+    } else {
+      Serial.print("Failed, rc=");
+      Serial.println(mqttClient.state());
+      delay(5000);
+    }
+    attempts++;
+  }
+
+  if (!mqttClient.connected()) {
+    Serial.println("Unable to connect to MQTT broker after multiple attempts.");
+  }
+}
+
+// Функція для публікації даних через MQTT
+
+
 void setup() {
+
   Serial.begin(115200);
 
-  // Завантаження збережених налаштувань
+  // Ініціалізація GPIO піну
+  pinMode(gpioPin, OUTPUT);
+  digitalWrite(gpioPin, LOW);  // Спочатку вимкнемо пін
+  
   preferences.begin("config", true);
   wifiSSID = preferences.getString("wifiSSID", "");
   wifiPassword = preferences.getString("wifiPassword", "");
@@ -225,7 +258,6 @@ void setup() {
   preferences.end();
 
   if (wifiSSID.isEmpty()) {
-    // Якщо налаштування не збережені, запускаємо точку доступу для первинного налаштування
     Serial.println("First time setup, starting AP...");
     WiFi.softAP("ESP32-Setup", "12345678");
     Serial.print("Access Point IP: ");
@@ -251,10 +283,10 @@ void loop() {
   server.handleClient(); // Обробка HTTP-запитів
   mqttClient.loop(); // Обробка MQTT-повідомлень
 
-  // Публікація даних кожні 5 секунд
   static unsigned long lastPublishTime = 0;
   if (millis() - lastPublishTime >= 5000) {
     publishData();
+
     lastPublishTime = millis();
   }
 }
