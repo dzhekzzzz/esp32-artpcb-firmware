@@ -24,7 +24,7 @@ I faced some issues connecting to the server at first, but managed to resolve th
 
 ## 🧾 Notes on the Code
 
-The firmware initializes a secure MQTT client, connects to Wi-Fi, synchronizes time via NTP, and sets up a simple web server for managing configuration. All key settings are stored in non-volatile memory to persist between reboots. Commands received via MQTT allow remote control over GPIO and UART functionality.
+The firmware initializes a secure MQTT client, connects to Wi-Fi, synchronizes time via NTP, and sets up a simple web server for managing configuration. All key settings are stored in non-volatile memory to persist between reboots. Commands received via MQTT allow remote control over GPIO and UART functionality. To control gpio you need topic gpio/control and message 1(gpio on) or 0(gpio off), for UART its same but topic it uart/control.
 
 ## 💬 Feedback
 
