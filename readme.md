@@ -5,7 +5,7 @@ Built using PlatformIO.
 
 ## 🚧 Project Status
 
-This project is currently in **alpha**. It's functional, but may require further refinement and testing.
+This project is currently in **beta**. It's functional, but may require further refinement and testing.
 
 ## 🧩 About
 
@@ -13,6 +13,12 @@ This was a moderately complex task for me, especially since I had no prior exper
 
 As the MQTT broker, I used **HiveMQ’s public broker** for testing and development.  
 I faced some issues connecting to the server at first, but managed to resolve them after troubleshooting.
+
+## !!! Default Access Point Mode
+If no Wi-Fi settings are saved, the device creates its own Wi-Fi network:
+
+- **SSID:** `ESP32-AP`  
+- **Password:** `12345678`
 
 ## ⚙️ Features
 
