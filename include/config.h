@@ -5,10 +5,10 @@
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 #include <WebServer.h>
-#include <NTPClient.h>
 #include <WiFiUdp.h>  
 #include <Preferences.h>
 #include <ArduinoJson.h>
+#include <time.h>
 
 // Default Wi-Fi and MQTT settings
 const char* defaultSSID = "ESP32-AP";
@@ -32,8 +32,16 @@ String mqttPass = "";
 // Initialize Preferences for saving settings
 Preferences preferences;
 
-// Initialize NTP
-WiFiUDP udp;
-NTPClient timeClient(udp, "pool.ntp.org", 10800, 60000); // Time in UA
+enum DeviceState {
+    STATE_SETUP_AP,
+    STATE_CONNECT_WIFI,
+    STATE_CONNECT_MQTT,
+    STATE_RUNNING
+  };
+  
+DeviceState currentState = STATE_CONNECT_WIFI;
+  
+
+
 
 #endif
