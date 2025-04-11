@@ -39,6 +39,15 @@ void handleSave() {
   mqttUser     = server.arg("mqttUser");
   mqttPass     = server.arg("mqttPass");
 
+  Serial.println("===== SETTINGS RECEIVED FROM FORM =====");
+  Serial.println("Wi-Fi SSID: " + wifiSSID);
+  Serial.println("Wi-Fi Password: " + wifiPassword);
+  Serial.println("MQTT Server: " + mqttServer);
+  Serial.println("MQTT Port: " + String(mqttPort));
+  Serial.println("MQTT User: " + mqttUser);
+  Serial.println("MQTT Password: " + mqttPass);
+  Serial.println("========================================");
+
   // Store settings in preferences
   preferences.begin("config", false);
   preferences.putString("wifiSSID", wifiSSID);
@@ -120,8 +129,16 @@ void startAccessPoint() {
 void connectToMQTT() {
   Serial.println("Connecting to MQTT...");
 
-  // Set the CA certificate for secure connection
-  secureClient.setCACert(root_ca);
+  // Вибір клієнта в залежності від порту
+  if (mqttPort == 8883) {
+    Serial.println("Using secure MQTT (TLS)");
+    secureClient.setCACert(root_ca);
+    mqttClient.setClient(secureClient);
+  } else {
+    Serial.println("Using plain MQTT (no TLS)");
+    mqttClient.setClient(plainClient);
+  }
+
   mqttClient.setServer(mqttServer.c_str(), mqttPort);
   mqttClient.setCallback(mqttCallback);
 

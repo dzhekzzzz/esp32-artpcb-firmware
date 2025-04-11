@@ -5,7 +5,7 @@
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 #include <WebServer.h>
-#include <WiFiUdp.h>  
+#include <WiFiUdp.h>
 #include <Preferences.h>
 #include <ArduinoJson.h>
 #include <time.h>
@@ -18,14 +18,15 @@ bool uartEnabled = true;  // globally used
 
 // Objects initialization
 WebServer server(80);
+WiFiClient plainClient;
 WiFiClientSecure secureClient;
-PubSubClient mqttClient(secureClient);
+PubSubClient mqttClient; 
 
 // Variables for settings
 String wifiSSID = "";
 String wifiPassword = "";
 String mqttServer = "";
-int mqttPort = 8883; // Port for TLS connection
+int mqttPort = 8883; // Default TLS port
 String mqttUser = "";
 String mqttPass = "";
 
@@ -37,11 +38,8 @@ enum DeviceState {
     STATE_CONNECT_WIFI,
     STATE_CONNECT_MQTT,
     STATE_RUNNING
-  };
-  
+};
+
 DeviceState currentState = STATE_CONNECT_WIFI;
-  
-
-
 
 #endif
