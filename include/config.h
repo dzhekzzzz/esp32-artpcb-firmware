@@ -15,6 +15,8 @@ const char* defaultSSID = "ESP32-AP";
 const char* defaultPassword = "12345678";
 const int gpioPin = 2;
 bool uartEnabled = true;  // globally used
+unsigned long messageID = 1001;
+
 
 // Objects initialization
 WebServer server(80);

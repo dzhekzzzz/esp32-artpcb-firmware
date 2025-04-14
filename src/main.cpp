@@ -202,7 +202,7 @@ void publishData() {
   }
 
   DynamicJsonDocument doc(1024);
-  doc["MessageID"] = 1001;
+  doc["MessageID"] = messageID++; //BUG FIX
   doc["FwVerEsp"] = FW_VERSION;
   doc["InternalTemperature"] = String(internalTemperature) + "C";
   doc["ip"] = ip;
@@ -230,6 +230,8 @@ void publishData() {
 void setup() {
   Serial.begin(115200);
 
+  configTzTime("CET-1CEST,M3.5.0/2,M10.5.0/3", "pool.ntp.org", "time.nist.gov"); //TIME FIX
+
   pinMode(GPIO_PIN, OUTPUT);
   digitalWrite(GPIO_PIN, LOW);
 
@@ -243,8 +245,6 @@ void setup() {
   mqttPass     = preferences.getString("mqttPass", "");
   preferences.end();
 
-  // Configure time synchronization
-  configTzTime("Europe/Berlin", "pool.ntp.org", "time.nist.gov");
 
   // Determine connection state
   currentState = wifiSSID.isEmpty() ? STATE_SETUP_AP : STATE_CONNECT_WIFI;
